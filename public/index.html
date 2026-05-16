@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Brief vidéo 10 min — générateur</title>
+  <meta name="description" content="Génère un brief structuré (chapitres, beats, B-roll) pour une vidéo longue." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c0d10;
+      --panel: #14161c;
+      --border: #262a36;
+      --text: #e8eaef;
+      --muted: #9aa3b2;
+      --accent: #6ee7ff;
+      --accent-dim: #2a9db8;
+      --danger: #f87171;
+      --radius: 14px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a2234 0%, var(--bg) 55%),
+        radial-gradient(900px 500px at 100% 0%, #1a2a28 0%, transparent 50%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 2.25rem 1.25rem 3rem;
+    }
+    header {
+      margin-bottom: 2rem;
+    }
+    header h1 {
+      font-size: clamp(1.55rem, 3vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 62ch;
+    }
+    .grid {
+      display: grid;
+      gap: 1.25rem;
+    }
+    @media (min-width: 880px) {
+      .grid { grid-template-columns: 1fr 1.05fr; align-items: start; }
+    }
+    .card {
+      background: linear-gradient(160deg, rgba(255,255,255,0.04), transparent 40%), var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.35rem 1.35rem 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+    input, textarea, select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0f1116;
+      color: var(--text);
+      padding: 0.65rem 0.75rem;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--accent-dim);
+      box-shadow: 0 0 0 3px rgba(110, 231, 255, 0.12);
+    }
+    textarea { min-height: 4.5rem; resize: vertical; }
+    .row { display: grid; gap: 0.85rem; }
+    @media (min-width: 520px) { .row.cols-2 { grid-template-columns: 1fr 1fr; } }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem;
+      margin-top: 1rem;
+    }
+    button {
+      font: inherit;
+      font-weight: 600;
+      border: none;
+      border-radius: 999px;
+      padding: 0.65rem 1.15rem;
+      cursor: pointer;
+      transition: transform 0.08s ease, filter 0.15s;
+    }
+    button:active { transform: scale(0.98); }
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      color: #0b0c10;
+    }
+    button.primary:hover { filter: brightness(1.06); }
+    button.ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button.ghost:hover { border-color: var(--muted); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+    .hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.65rem;
+    }
+    .out-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .out-head h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent);
+      border: 1px solid rgba(110, 231, 255, 0.35);
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+    }
+    pre {
+      margin: 0;
+      padding: 1rem;
+      border-radius: 12px;
+      background: #0a0b0e;
+      border: 1px solid var(--border);
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      overflow: auto;
+      max-height: min(62vh, 640px);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .err {
+      color: var(--danger);
+      font-size: 0.9rem;
+      margin: 0 0 0.75rem;
+    }
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    .range-row { display: flex; align-items: center; gap: 0.75rem; }
+    .range-row input[type="range"] { flex: 1; }
+    .range-val { font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: right; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Brief vidéo ~10 minutes</h1>
+      <p>
+        Indiquez un <strong>domaine</strong> et un <strong>angle</strong> : vous obtenez un plan JSON
+        (chapitres, durées, points à dire, idées de B-roll) prêt à être enrichi par un script IA ou un monteur.
+      </p>
+    </header>
+
+    <div class="grid">
+      <section class="card" aria-labelledby="f-title">
+        <h2 id="f-title" class="visually-hidden" style="position:absolute;left:-9999px;">Formulaire</h2>
+        <div class="row">
+          <div>
+            <label for="domain">Domaine</label>
+            <input id="domain" name="domain" type="text" placeholder="Ex. cybersécurité pour PME" autocomplete="off" />
+          </div>
+          <div>
+            <label for="angle">Angle éditorial</label>
+            <input id="angle" name="angle" type="text" placeholder="Ex. erreurs fréquentes en 2026" autocomplete="off" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:0.85rem;">
+          <div>
+            <label for="audience">Public cible</label>
+            <textarea id="audience" name="audience" placeholder="Ex. entrepreneurs non techniques, niveau débutant">curieux du sujet, niveau intermédiaire</textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:0.85rem;">
+          <div>
+            <label for="seconds">Durée cible (minutes)</label>
+            <div class="range-row">
+              <input id="seconds" type="range" min="1" max="60" value="10" step="1" />
+              <span class="range-val" id="secLabel">10 min</span>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" id="btnGo">Générer le brief</button>
+          <button type="button" class="ghost" id="btnCopy" disabled>Copier le JSON</button>
+          <button type="button" class="ghost" id="btnDl" disabled>Télécharger</button>
+        </div>
+        <p class="hint">API directe : <code>GET /api/plan</code> (aide) ou <code>POST /api/plan</code> avec <code>Content-Type: application/json</code>.</p>
+      </section>
+
+      <section class="card" aria-labelledby="out-title">
+        <div class="out-head">
+          <h2 id="out-title">Résultat</h2>
+          <span class="badge" id="statusBadge">en attente</span>
+        </div>
+        <p class="err" id="err" hidden></p>
+        <pre id="out" aria-live="polite">{}</pre>
+      </section>
+    </div>
+
+    <footer>
+      Déployé sur Vercel : connectez ce dépôt, laissez les réglages par défaut (pas de commande de build obligatoire).
+      Le dossier <code>public/</code> sert l’interface ; <code>api/plan.py</code> expose l’API Python.
+    </footer>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const out = $("out");
+    const err = $("err");
+    const btnGo = $("btnGo");
+    const btnCopy = $("btnCopy");
+    const btnDl = $("btnDl");
+    const badge = $("statusBadge");
+    const secRange = $("seconds");
+    const secLabel = $("secLabel");
+
+    let lastBlob = null;
+
+    function setErr(msg) {
+      if (!msg) { err.hidden = true; err.textContent = ""; return; }
+      err.hidden = false;
+      err.textContent = msg;
+    }
+
+    function setBadge(text) {
+      badge.textContent = text;
+    }
+
+    secRange.addEventListener("input", () => {
+      const m = Number(secRange.value);
+      secLabel.textContent = m + " min";
+    });
+
+    async function generate() {
+      const domain = $("domain").value.trim();
+      const angle = $("angle").value.trim();
+      const audience = $("audience").value.trim() || "curieux du sujet, niveau intermédiaire";
+      const seconds = Math.round(Number(secRange.value) * 60);
+
+      setErr("");
+      btnGo.disabled = true;
+      btnCopy.disabled = true;
+      btnDl.disabled = true;
+      setBadge("génération…");
+      out.textContent = "…";
+
+      try {
+        const res = await fetch("/api/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain, angle, audience, seconds }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setErr(data.error || ("Erreur " + res.status));
+          out.textContent = JSON.stringify(data, null, 2);
+          setBadge("erreur");
+          return;
+        }
+        lastBlob = data;
+        out.textContent = JSON.stringify(data, null, 2);
+        btnCopy.disabled = false;
+        btnDl.disabled = false;
+        setBadge("prêt");
+      } catch (e) {
+        setErr("Réseau ou API indisponible : " + (e && e.message ? e.message : e));
+        out.textContent = "{}";
+        setBadge("erreur");
+      } finally {
+        btnGo.disabled = false;
+      }
+    }
+
+    btnGo.addEventListener("click", generate);
+
+    btnCopy.addEventListener("click", async () => {
+      if (!lastBlob) return;
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(lastBlob, null, 2));
+        setBadge("copié");
+        setTimeout(() => setBadge("prêt"), 1200);
+      } catch {
+        setErr("Impossible de copier (permissions navigateur).");
+      }
+    });
+
+    btnDl.addEventListener("click", () => {
+      if (!lastBlob) return;
+      const blob = new Blob([JSON.stringify(lastBlob, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "brief-video.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  </script>
+</body>
+</html>
