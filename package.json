@@ -1,0 +1,8 @@
+{
+  "name": "youtube-brief",
+  "private": true,
+  "description": "Static UI (public/) + Python serverless (api/)",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\""
+  }
+}

@@ -4,10 +4,13 @@ Planificateur de brief vidéo (~10 min) : `python3 -m video_agent "votre domaine
 
 ## Déploiement sur Vercel
 
+> **Erreur** `functions` / `api/**/*.py` : sur Vercel, ce glob ne cible pas toujours `api/plan.py`. Ce dépôt utilise `api/plan.py` dans `vercel.json`. Si l’erreur persiste, vérifiez que la branche déployée contient bien `api/plan.py` (fusionnez les PR si besoin).
+
 1. Connectez le dépôt sur [vercel.com](https://vercel.com) (**Add New → Project**).
 2. Laissez **Root Directory** sur la racine du dépôt (branche avec `api/` et `public/`).
-3. **Build Command** : vide (ou `echo skip`). **Output Directory** : vide — Vercel sert `public/` automatiquement et compile les fonctions `api/*.py`.
-4. Après déploiement : page d’accueil = formulaire ; API = `POST /api/plan` (JSON) ou `GET /api/plan?domain=...&angle=...`.
+3. **Framework / build** : le dépôt fixe `framework: null` (« Other ») et `outputDirectory: "public"` dans `vercel.json`, avec `package.json` et le script `npm run build` (no-op) pour éviter les échecs si l’assistant d’import a laissé un **Output Directory** invalide (ex. `dist`, `.next`) ou un **framework** cassé dans l’URL (`framework=|`).
+4. Si un déploiement existant échoue encore : **Project → Settings → General → Framework Preset** = **Other** ; **Build Command** = `npm run build` ; **Output Directory** = `public` (ou laissez le dépôt piloter via `vercel.json`).
+5. Après déploiement : page d’accueil = formulaire ; API = `POST /api/plan` (JSON) ou `GET /api/plan?domain=...&angle=...`.
 
 Exemple `POST` :
 
