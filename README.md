@@ -62,3 +62,13 @@ Options utiles : `--seconds`, `--clip-target-seconds`, `--no-modular`, `--fps`.
 
 C’est une **base visuelle** pour enregistrer la voix par-dessus ou pour itérer avant un montage « réel ».
 
+### Voix automatique (sans clé API)
+
+Avec **`edge-tts`** (Microsoft Edge TTS, via `pip install -r requirements.txt`) :
+
+```bash
+python3 -m video_agent.slideshow --domain "Votre sujet" --angle "Votre angle" --speech -o video-parlee.mp4
+```
+
+Voix par défaut : `fr-FR-DeniseNeural`. Autres voix : `python3 -m edge_tts -l` puis `--voice …`.
+

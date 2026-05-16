@@ -1,6 +1,7 @@
 """
-Rendu vidéo « brouillon » à partir d'un brief JSON : diapositives (titre + texte)
-et montage MP4 via FFmpeg. Pensé pour être exécuté en local (Vercel ne convient pas à l'encodage long).
+Rendu vidéo à partir d'un brief JSON : diapositives + montage MP4 (FFmpeg).
+Option : synthèse vocale (Microsoft Edge TTS, gratuit, sans clé API) via le module edge_tts.
+À exécuter en local — Vercel ne convient pas à l'encodage long.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 from pathlib import Path
@@ -20,6 +22,8 @@ from video_agent.planner import DEFAULT_CLIP_TARGET_SECONDS, build_brief
 
 MIN_SLIDE_SECONDS = 0.5
 DEFAULT_WIDTH, DEFAULT_HEIGHT = 1280, 720
+TTS_CHAR_LIMIT = 4500
+DEFAULT_FRENCH_VOICE = "fr-FR-DeniseNeural"
 
 
 def _pick_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -112,11 +116,49 @@ def _ffmpeg_bin() -> str:
     return exe
 
 
+def _tts_script(title: str, body: str) -> str:
+    text = f"{title.strip()}.\n{body.strip()}".strip()
+    if len(text) > TTS_CHAR_LIMIT:
+        text = text[: TTS_CHAR_LIMIT - 1] + "…"
+    return text
+
+
+def _run_edge_tts(text: str, out_mp3: Path, voice: str) -> None:
+    """Synthèse via le service Edge (module edge_tts, sans clé API)."""
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as tf:
+        tf.write(text)
+        tf_path = Path(tf.name)
+    try:
+        cmd = [
+            sys.executable,
+            "-m",
+            "edge_tts",
+            "-f",
+            str(tf_path),
+            "-v",
+            voice,
+            "--write-media",
+            str(out_mp3),
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except subprocess.CalledProcessError as e:
+        msg = (e.stderr or "").strip() or str(e)
+        raise RuntimeError(
+            "edge_tts a échoué. Installez les dépendances : pip install -r requirements.txt\n" + msg
+        ) from e
+    finally:
+        try:
+            tf_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def render_mp4_from_slides(
     slides: list[tuple[str, str, float]],
     output_mp4: Path,
     *,
     fps: int = 25,
+    voice: str | None = None,
 ) -> None:
     if not slides:
         raise ValueError("Aucune diapositive à rendre (brief vide ou JSON invalide).")
@@ -124,6 +166,19 @@ def render_mp4_from_slides(
     ffmpeg = _ffmpeg_bin()
     output_mp4 = output_mp4.expanduser().resolve()
 
+    if voice:
+        _render_with_tts(slides, output_mp4, ffmpeg=ffmpeg, fps=fps, voice=voice)
+    else:
+        _render_silent(slides, output_mp4, ffmpeg=ffmpeg, fps=fps)
+
+
+def _render_silent(
+    slides: list[tuple[str, str, float]],
+    output_mp4: Path,
+    *,
+    ffmpeg: str,
+    fps: int,
+) -> None:
     with tempfile.TemporaryDirectory(prefix="briefvid_") as td:
         tmp = Path(td)
         paths: list[Path] = []
@@ -140,7 +195,10 @@ def render_mp4_from_slides(
         n = len(slides)
         parts: list[str] = []
         for i in range(n):
-            parts.append(f"[{i}:v]scale={DEFAULT_WIDTH}:{DEFAULT_HEIGHT}:force_original_aspect_ratio=decrease," f"pad={DEFAULT_WIDTH}:{DEFAULT_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}]")
+            parts.append(
+                f"[{i}:v]scale={DEFAULT_WIDTH}:{DEFAULT_HEIGHT}:force_original_aspect_ratio=decrease,"
+                f"pad={DEFAULT_WIDTH}:{DEFAULT_HEIGHT}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps}[v{i}]"
+            )
         concat_in = "".join(f"[v{i}]" for i in range(n))
         parts.append(f"{concat_in}concat=n={n}:v=1:a=0[vout]")
         filter_complex = ";".join(parts)
@@ -164,6 +222,85 @@ def render_mp4_from_slides(
         subprocess.run(args, check=True)
 
 
+def _render_with_tts(
+    slides: list[tuple[str, str, float]],
+    output_mp4: Path,
+    *,
+    ffmpeg: str,
+    fps: int,
+    voice: str,
+) -> None:
+    """Un segment MP4 par slide (image en boucle + voix), puis concat en copy."""
+    with tempfile.TemporaryDirectory(prefix="briefvidtts_") as td:
+        tmp = Path(td)
+        segments: list[Path] = []
+        for i, (title, body, _planned_dur) in enumerate(slides):
+            png = tmp / f"slide_{i:04d}.png"
+            mp3 = tmp / f"slide_{i:04d}.mp3"
+            seg = tmp / f"seg_{i:04d}.mp4"
+            render_slide_image(title, body).save(png, format="PNG")
+            _run_edge_tts(_tts_script(title, body), mp3, voice=voice)
+            cmd = [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-loop",
+                "1",
+                "-i",
+                str(png),
+                "-i",
+                str(mp3),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "28",
+                "-pix_fmt",
+                "yuv420p",
+                "-r",
+                str(fps),
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ar",
+                "44100",
+                "-ac",
+                "2",
+                "-shortest",
+                str(seg),
+            ]
+            subprocess.run(cmd, check=True)
+            segments.append(seg)
+
+        list_path = tmp / "concat.txt"
+        lines = "\n".join(f"file '{p.as_posix()}'" for p in segments)
+        list_path.write_text(lines + "\n", encoding="utf-8")
+
+        subprocess.run(
+            [
+                ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(list_path),
+                "-c",
+                "copy",
+                str(output_mp4),
+            ],
+            check=True,
+        )
+
+
 def _load_brief_json(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -173,7 +310,7 @@ def _load_brief_json(path: Path) -> dict[str, Any]:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Génère un MP4 « brouillon » (diapositives) à partir d'un brief JSON ou d'un domaine/angle.",
+        description="Génère un MP4 à partir d'un brief JSON ou d'un domaine/angle (diaporama ; option voix Edge TTS).",
     )
     src = p.add_mutually_exclusive_group(required=True)
     src.add_argument("--json", type=Path, help="Chemin vers un brief.json (sortie du planificateur).")
@@ -185,6 +322,16 @@ def main() -> None:
     p.add_argument("--no-modular", action="store_true", help="Ne pas utiliser modular_assembly pour les slides.")
     p.add_argument("-o", "--output", type=Path, default=Path("brief-draft.mp4"), help="Fichier MP4 de sortie.")
     p.add_argument("--fps", type=int, default=25)
+    p.add_argument(
+        "--speech",
+        action="store_true",
+        help="Active la synthèse vocale (edge_tts / service Microsoft Edge, sans clé API).",
+    )
+    p.add_argument(
+        "--voice",
+        default=DEFAULT_FRENCH_VOICE,
+        help=f"Voix edge-tts si --speech (défaut : {DEFAULT_FRENCH_VOICE}). Lister : python3 -m edge_tts -l",
+    )
     args = p.parse_args()
 
     if args.domain:
@@ -197,8 +344,10 @@ def main() -> None:
         data = _load_brief_json(args.json)
 
     slides = slides_from_brief(data)
-    render_mp4_from_slides(slides, args.output, fps=args.fps)
-    print(f"Vidéo écrite : {args.output.resolve()}")
+    voice = args.voice if args.speech else None
+    render_mp4_from_slides(slides, args.output, fps=args.fps, voice=voice)
+    mode = "voix + images" if voice else "muet (images seules)"
+    print(f"Vidéo écrite ({mode}) : {args.output.resolve()}")
 
 
 if __name__ == "__main__":
