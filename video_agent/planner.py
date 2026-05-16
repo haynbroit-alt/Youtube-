@@ -1,16 +1,21 @@
 """
 Planificateur de contenu long format (~10 minutes).
 Produit une structure exploitable par des outils externes (LLM, TTS, éditeur).
+Inclut un plan « petits clips collés » pour fabriquer une grande vidée par assemblage.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
 DEFAULT_TOTAL_SECONDS = 600  # 10 minutes
+DEFAULT_CLIP_TARGET_SECONDS = 75.0
+CLIP_TARGET_MIN = 20.0
+CLIP_TARGET_MAX = 150.0
 
 
 @dataclass
@@ -33,6 +38,23 @@ class Chapter:
 
 
 @dataclass
+class ModularClip:
+    """Un bloc court à tourner ou à exporter seul, puis à enchaîner au montage."""
+
+    id: str
+    chapter_index: int
+    part_index: int
+    parts_in_chapter: int
+    title: str
+    target_seconds: float
+    timeline_start_seconds: float
+    timeline_end_seconds: float
+    talking_points: list[str]
+    stitch_out: str
+    stitch_in_next: str
+
+
+@dataclass
 class ProductionBrief:
     domain: str
     angle: str
@@ -43,16 +65,31 @@ class ProductionBrief:
     cta_closing: str
     seo_keywords: list[str]
 
-    def to_json(self, indent: int = 2) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, indent=indent)
+    def to_json(
+        self,
+        indent: int = 2,
+        *,
+        modular: bool = False,
+        clip_target_seconds: float = DEFAULT_CLIP_TARGET_SECONDS,
+    ) -> str:
+        return json.dumps(
+            self.to_dict(modular=modular, clip_target_seconds=clip_target_seconds),
+            ensure_ascii=False,
+            indent=indent,
+        )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(
+        self,
+        *,
+        modular: bool = False,
+        clip_target_seconds: float = DEFAULT_CLIP_TARGET_SECONDS,
+    ) -> dict[str, Any]:
         def chapter_dict(c: Chapter) -> dict[str, Any]:
             d = asdict(c)
             d["beats"] = [asdict(b) for b in c.beats]
             return d
 
-        return {
+        out: dict[str, Any] = {
             "domain": self.domain,
             "angle": self.angle,
             "audience": self.audience,
@@ -62,6 +99,114 @@ class ProductionBrief:
             "cta_closing": self.cta_closing,
             "seo_keywords": self.seo_keywords,
         }
+        if modular:
+            out["modular_assembly"] = build_modular_assembly_dict(
+                self.chapters,
+                clip_target_seconds=clip_target_seconds,
+            )
+        return out
+
+
+def _split_list_round_robin(items: list[str], n: int) -> list[list[str]]:
+    if n <= 0:
+        return [list(items)]
+    buckets: list[list[str]] = [[] for _ in range(n)]
+    for i, it in enumerate(items):
+        buckets[i % n].append(it)
+    return buckets
+
+
+def _clamp_clip_target(seconds: float) -> float:
+    return max(CLIP_TARGET_MIN, min(CLIP_TARGET_MAX, float(seconds)))
+
+
+def build_modular_clips(chapters: list[Chapter], clip_target_seconds: float = DEFAULT_CLIP_TARGET_SECONDS) -> list[ModularClip]:
+    """
+    Découpe chaque chapitre en blocs courts (cible ~clip_target_seconds)
+    pour tourner / exporter séparément puis coller sur la timeline.
+    """
+    target = _clamp_clip_target(clip_target_seconds)
+    clips: list[ModularClip] = []
+    global_idx = 0
+    timeline = 0.0
+
+    for ci, chapter in enumerate(chapters, start=1):
+        dur = max(1.0, float(chapter.target_seconds))
+        n_parts = max(1, math.ceil(dur / target))
+        part_dur = dur / n_parts
+        tp_buckets = _split_list_round_robin(chapter.talking_points, n_parts)
+
+        for k in range(n_parts):
+            global_idx += 1
+            cid = f"M{global_idx:03d}"
+            t0, t1 = timeline, timeline + part_dur
+            title = chapter.title if n_parts == 1 else f"{chapter.title} — bloc {k + 1}/{n_parts}"
+
+            stitch_out = (
+                "Finir sur une phrase complète ; laisser 0,5–1 s de silence ou room tone "
+                "(facilite le recouvrement audio)."
+            )
+            stitch_next = ""
+            if k < n_parts - 1:
+                stitch_next = (
+                    "Bloc suivant : enchaîner à voix sur le même ton ; privilégier une coupe "
+                    "« au souffle » plutôt qu'au milieu d'un mot."
+                )
+            elif ci < len(chapters):
+                stitch_next = (
+                    "Chapitre suivant : option J-cut (son du bloc suivant commence sous le B-roll "
+                    "de fin) pour masquer la couture."
+                )
+
+            clips.append(
+                ModularClip(
+                    id=cid,
+                    chapter_index=ci,
+                    part_index=k + 1,
+                    parts_in_chapter=n_parts,
+                    title=title,
+                    target_seconds=round(part_dur, 2),
+                    timeline_start_seconds=round(t0, 2),
+                    timeline_end_seconds=round(t1, 2),
+                    talking_points=tp_buckets[k] if k < len(tp_buckets) else [],
+                    stitch_out=stitch_out,
+                    stitch_in_next=stitch_next,
+                )
+            )
+            timeline = t1
+
+    return clips
+
+
+def build_modular_assembly_dict(
+    chapters: list[Chapter],
+    *,
+    clip_target_seconds: float = DEFAULT_CLIP_TARGET_SECONDS,
+) -> dict[str, Any]:
+    clips = build_modular_clips(chapters, clip_target_seconds)
+    target = _clamp_clip_target(clip_target_seconds)
+    return {
+        "philosophy": (
+            "Stratégie « petite vidéo × N » : vous enregistrez ou exportez des blocs courts "
+            "numérotés, puis vous les assemblez sur une timeline unique — même logique que les "
+            "gros YouTubeurs qui tournent par séquences."
+        ),
+        "clip_target_seconds": target,
+        "clips": [asdict(c) for c in clips],
+        "filename_convention": "M###_slug-court-descriptif.mp4 (### = ordre du montage)",
+        "techniques_collage": [
+            "Même réglage caméra (balance des blancs, ISO) pour tous les blocs d'un même chapitre.",
+            "Audio : même distance micro, même pièce ; enlever bruit de fond entre blocs ou garder une room tone cohérente.",
+            "Transitions : coupe sèche + 2–4 images B-roll entre deux blocs plutôt que fondus « génériques ».",
+            "Phrase de liaison écrite à l'avance entre bloc k et k+1 pour éviter le « euh » au collage.",
+            "Export intermédiaire en même résolution / cadence que le projet final pour éviter les re-timecodes.",
+        ],
+        "checks_avant_publication": [
+            "Vérifier que la somme des durées des clips ≈ durée cible du brief.",
+            "Normaliser les pics audio entre clips (-14 à -16 LUFS type podcast/voix).",
+            "Regarder les 3 s avant/après chaque coupe : œil sur le cadrage et le clignement.",
+        ],
+    }
 
 
 def _chapter_templates(domain: str, angle: str) -> list[dict[str, Any]]:
@@ -145,10 +290,11 @@ def build_brief(
     total_seconds: float = DEFAULT_TOTAL_SECONDS,
 ) -> ProductionBrief:
     """
-    Construit un brief de ~10 minutes à partir d'un domaine et d'un angle éditorial.
+    Construit un brief à partir d'un domaine et d'un angle éditorial.
 
     Ce n'est pas la vidéo elle-même : c'est le plan que votre pipeline
-    (LLM, voix, montage) peut remplir et affiner.
+    (LLM, voix, montage) peut remplir et affiner. Utilisez to_dict(modular=True)
+    pour le découpage en petits clips à assembler.
     """
     templates = _chapter_templates(domain, angle)
     n = len(templates)
@@ -166,8 +312,9 @@ def build_brief(
             )
         )
 
+    minutes = max(1, int(round(total_seconds / 60)))
     hook = (
-        f"En 10 minutes : ce que « {domain} » change pour vous, "
+        f"En {minutes} minutes : ce que « {domain} » change pour vous, "
         f"avec l'angle « {angle} » — sans blabla."
     )
     cta = "Notez votre prochaine action dans les commentaires ; on s'en sert pour une suite."
@@ -199,11 +346,25 @@ def main() -> None:
     p.add_argument("angle", help="Ex. 'pour débutants', 'mythes vs réalité'")
     p.add_argument("--audience", default="curieux du sujet, niveau intermédiaire")
     p.add_argument("--seconds", type=float, default=DEFAULT_TOTAL_SECONDS)
+    p.add_argument(
+        "--clip-target-seconds",
+        type=float,
+        default=DEFAULT_CLIP_TARGET_SECONDS,
+        help="Cible de durée par petit clip (modular_assembly).",
+    )
+    p.add_argument(
+        "--no-modular",
+        action="store_true",
+        help="Ne pas inclure modular_assembly dans le JSON.",
+    )
     p.add_argument("-o", "--output", help="Fichier JSON de sortie")
     args = p.parse_args()
 
     brief = build_brief(args.domain, args.angle, audience=args.audience, total_seconds=args.seconds)
-    text = brief.to_json()
+    text = brief.to_json(
+        modular=not args.no_modular,
+        clip_target_seconds=args.clip_target_seconds,
+    )
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
             f.write(text)

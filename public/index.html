@@ -172,6 +172,8 @@
     .range-row { display: flex; align-items: center; gap: 0.75rem; }
     .range-row input[type="range"] { flex: 1; }
     .range-val { font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: right; color: var(--muted); font-size: 0.9rem; }
+    .check-row .inline { display: flex; gap: 0.55rem; align-items: flex-start; font-weight: 500; color: var(--text); cursor: pointer; }
+    .check-row input[type="checkbox"] { width: auto; margin-top: 0.2rem; accent-color: var(--accent-dim); }
   </style>
 </head>
 <body>
@@ -180,7 +182,8 @@
       <h1>Brief vidéo ~10 minutes</h1>
       <p>
         Indiquez un <strong>domaine</strong> et un <strong>angle</strong> : vous obtenez un plan JSON
-        (chapitres, durées, points à dire, idées de B-roll) prêt à être enrichi par un script IA ou un monteur.
+        (chapitres, durées, points à dire, idées de B-roll). Activez le découpage en <strong>petits clips</strong>
+        pour tourner ou exporter bloc par bloc, puis les coller sur une timeline — idéal pour fabriquer une grande vidéo sans tout enregistrer d’un seul tenant.
       </p>
     </header>
 
@@ -210,6 +213,18 @@
               <input id="seconds" type="range" min="1" max="60" value="10" step="1" />
               <span class="range-val" id="secLabel">10 min</span>
             </div>
+          </div>
+        </div>
+        <div class="row cols-2" style="margin-top:0.85rem;">
+          <div class="check-row">
+            <label class="inline" for="modular">
+              <input id="modular" name="modular" type="checkbox" checked />
+              <span>Plan <strong>petits clips</strong> (repères de collage pour assembler une grande vidéo)</span>
+            </label>
+          </div>
+          <div>
+            <label for="clipTarget">Cible par clip (secondes)</label>
+            <input id="clipTarget" type="number" min="20" max="150" value="75" step="5" />
           </div>
         </div>
         <div class="actions">
@@ -269,6 +284,10 @@
       const angle = $("angle").value.trim();
       const audience = $("audience").value.trim() || "curieux du sujet, niveau intermédiaire";
       const seconds = Math.round(Number(secRange.value) * 60);
+      const modular = $("modular").checked;
+      let clip_target_seconds = Number($("clipTarget").value);
+      if (!Number.isFinite(clip_target_seconds)) clip_target_seconds = 75;
+      clip_target_seconds = Math.min(150, Math.max(20, clip_target_seconds));
 
       setErr("");
       btnGo.disabled = true;
@@ -281,7 +300,7 @@
         const res = await fetch("/api/plan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ domain, angle, audience, seconds }),
+          body: JSON.stringify({ domain, angle, audience, seconds, modular, clip_target_seconds }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {

@@ -1,5 +1,6 @@
 """
-POST /api/plan — corps JSON : { "domain", "angle", "audience?", "seconds?" }
+POST /api/plan — corps JSON :
+  { "domain", "angle", "audience?", "seconds?", "modular?", "clip_target_seconds?" }
 GET /api/plan — aide rapide + statut
 """
 
@@ -15,7 +16,12 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from video_agent.planner import build_brief  # noqa: E402
+from video_agent.planner import (  # noqa: E402
+    CLIP_TARGET_MAX,
+    CLIP_TARGET_MIN,
+    DEFAULT_CLIP_TARGET_SECONDS,
+    build_brief,
+)
 
 
 def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -36,6 +42,27 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> dict:
     if not raw.strip():
         raise ValueError("Corps vide")
     return json.loads(raw)
+
+
+def _parse_bool(val: str | None, default: bool = True) -> bool:
+    if val is None or val == "":
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on", "oui")
+
+
+def _brief_dict(
+    domain: str,
+    angle: str,
+    *,
+    audience: str,
+    seconds: float,
+    modular: bool,
+    clip_target_seconds: float,
+) -> dict:
+    if clip_target_seconds < CLIP_TARGET_MIN or clip_target_seconds > CLIP_TARGET_MAX:
+        raise ValueError(f"clip_target_seconds doit être entre {CLIP_TARGET_MIN} et {CLIP_TARGET_MAX}")
+    brief = build_brief(domain, angle, audience=audience, total_seconds=seconds)
+    return brief.to_dict(modular=modular, clip_target_seconds=clip_target_seconds)
 
 
 class handler(BaseHTTPRequestHandler):
@@ -63,8 +90,28 @@ class handler(BaseHTTPRequestHandler):
                 _send_json(self, 400, {"error": "seconds invalide"})
                 return
             audience = (qs.get("audience") or ["curieux du sujet, niveau intermédiaire"])[0]
-            brief = build_brief(domain, angle, audience=audience, total_seconds=seconds)
-            _send_json(self, 200, brief.to_dict())
+            modular = _parse_bool((qs.get("modular") or [""])[0] or None, default=True)
+            try:
+                clip_target = float((qs.get("clip_target_seconds") or [str(DEFAULT_CLIP_TARGET_SECONDS)])[0])
+            except ValueError:
+                _send_json(self, 400, {"error": "clip_target_seconds invalide"})
+                return
+            if seconds < 60 or seconds > 3600:
+                _send_json(self, 400, {"error": "seconds doit être entre 60 et 3600"})
+                return
+            try:
+                payload = _brief_dict(
+                    domain,
+                    angle,
+                    audience=audience,
+                    seconds=seconds,
+                    modular=modular,
+                    clip_target_seconds=clip_target,
+                )
+            except ValueError as e:
+                _send_json(self, 400, {"error": str(e)})
+                return
+            _send_json(self, 200, payload)
             return
 
         _send_json(
@@ -78,7 +125,17 @@ class handler(BaseHTTPRequestHandler):
                     "angle": "pour débutants absolus",
                     "audience": "lycéens curieux",
                     "seconds": 600,
+                    "modular": True,
+                    "clip_target_seconds": 75,
                 },
+                "get_params": [
+                    "domain",
+                    "angle",
+                    "audience (optionnel)",
+                    "seconds (optionnel, défaut 600)",
+                    "modular (optionnel, défaut true)",
+                    "clip_target_seconds (optionnel, défaut 75)",
+                ],
             },
         )
 
@@ -122,5 +179,32 @@ class handler(BaseHTTPRequestHandler):
             _send_json(self, 400, {"error": "seconds doit être entre 60 et 3600"})
             return
 
-        brief = build_brief(domain, angle, audience=audience, total_seconds=seconds)
-        _send_json(self, 200, brief.to_dict())
+        if "modular" not in data:
+            modular = True
+        else:
+            raw_mod = data.get("modular")
+            if isinstance(raw_mod, str):
+                modular = _parse_bool(raw_mod, default=True)
+            else:
+                modular = bool(raw_mod)
+
+        try:
+            clip_target = float(data.get("clip_target_seconds", DEFAULT_CLIP_TARGET_SECONDS))
+        except (TypeError, ValueError):
+            _send_json(self, 400, {"error": "clip_target_seconds doit être un nombre"})
+            return
+
+        try:
+            payload = _brief_dict(
+                domain,
+                angle,
+                audience=audience,
+                seconds=seconds,
+                modular=modular,
+                clip_target_seconds=clip_target,
+            )
+        except ValueError as e:
+            _send_json(self, 400, {"error": str(e)})
+            return
+
+        _send_json(self, 200, payload)
