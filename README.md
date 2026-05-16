@@ -39,3 +39,26 @@ Le JSON peut inclure `modular_assembly` : liste de **clips courts** (`M001`, `M0
 Paramètres API / POST : `modular` (bool, défaut `true`), `clip_target_seconds` (entre 20 et 150, défaut `75`).  
 CLI : `--clip-target-seconds 75` et `--no-modular` pour désactiver.
 
+## Génération d’une vidéo (MP4 brouillon, local)
+
+Vercel **ne remplace pas** un studio : l’encodage FFmpeg long, la voix et les vraies images passent mieux sur votre machine ou sur un service spécialisé (Runway, ElevenLabs, etc.).
+
+Ce dépôt inclut toutefois un **rendu MP4 « diaporama »** : une image par chapitre (ou par clip si `modular_assembly` est présent), durées alignées sur le brief, montage **H.264** via **FFmpeg**.
+
+Prérequis : `ffmpeg` dans le `PATH`, puis :
+
+```bash
+pip install -r requirements.txt
+python3 -m video_agent.slideshow --domain "Votre sujet" --angle "Votre angle" -o ma-video.mp4
+```
+
+À partir d’un JSON déjà téléchargé :
+
+```bash
+python3 -m video_agent.slideshow --json brief.json -o ma-video.mp4
+```
+
+Options utiles : `--seconds`, `--clip-target-seconds`, `--no-modular`, `--fps`.
+
+C’est une **base visuelle** pour enregistrer la voix par-dessus ou pour itérer avant un montage « réel ».
+

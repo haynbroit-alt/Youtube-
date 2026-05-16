@@ -1,2 +1,2 @@
-# Aucune dépendance pip : logique en bibliothèque standard uniquement.
-# Fichier présent pour que Vercel active le runtime Python sur /api/*.py
+# Dépendances Python (API Vercel + rendu vidéo local).
+pillow>=10.0.0
