@@ -72,3 +72,20 @@ python3 -m video_agent.slideshow --domain "Votre sujet" --angle "Votre angle" --
 
 Voix par défaut : `fr-FR-DeniseNeural`. Autres voix : `python3 -m edge_tts -l` puis `--voice …`.
 
+## Vercel + `uv` / `pyproject.toml`
+
+Si le build échoue avec **`No project table found in pyproject.toml`**, c’est que Vercel utilise **`uv lock`** et que votre `pyproject.toml` ne contient pas de section **`[project]`** (PEP 621). Ajoutez au minimum :
+
+```toml
+[project]
+name = "mon-projet"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "edge-tts>=6.1.0",
+    "pillow>=10.0.0",
+]
+```
+
+…ou **supprimez** `pyproject.toml` si vous ne voulez gérer les deps que via `requirements.txt` (selon la config Vercel). Ce dépôt inclut un `pyproject.toml` valide pour éviter cette erreur.
+

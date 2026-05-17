@@ -1,0 +1,9 @@
+[project]
+name = "youtube-brief"
+version = "0.1.0"
+description = "Planificateur de brief vidéo, API Vercel et rendu local (slideshow)."
+requires-python = ">=3.12"
+dependencies = [
+    "edge-tts>=6.1.0",
+    "pillow>=10.0.0",
+]
